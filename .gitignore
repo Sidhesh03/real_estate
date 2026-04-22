@@ -1,0 +1,31 @@
+# Node dependencies
+**/node_modules/
+**/dist/
+**/.env
+
+# Hardhat
+**/artifacts/
+**/cache/
+**/typechain/
+**/typechain-types/
+hardhat-network-helpers-errored.log
+
+# Java/Maven
+**/target/
+**/.mvn/wrapper/maven-wrapper.jar
+**/.mvn/wrapper/*.properties
+**/PropertyNFT.abi
+**/PropertyNFT.bin
+
+# IDEs
+**/.vscode/
+**/.idea/
+**/*.iml
+**/.classpath
+**/.project
+**/.settings/
+**/bin/
+
+# OS files
+.DS_Store
+Thumbs.db
