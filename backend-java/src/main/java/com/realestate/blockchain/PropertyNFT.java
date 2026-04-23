@@ -17,11 +17,7 @@ import java.util.List;
 /**
  * PropertyNFT Java Wrapper
  * ------------------------
- * This class is a simplified version of what Web3j CLI generates.
- * It provides a type-safe way to interact with the smart contract.
- *
- * In a real scenario, this is generated using:
- * web3j generate solidity -a PropertyNFT.abi -b PropertyNFT.bin -o src/main/java -p com.realestate.blockchain
+ * Updated with propertyIds tracking support.
  */
 public class PropertyNFT extends Contract {
 
@@ -37,27 +33,34 @@ public class PropertyNFT extends Contract {
         return new PropertyNFT(contractAddress, web3j, transactionManager, gasProvider);
     }
 
-    public RemoteFunctionCall<PropertyStruct> getProperty(BigInteger tokenId) {
-        final Function function = new Function("getProperty",
-                Arrays.asList(new Uint256(tokenId)),
-                Arrays.asList(new TypeReference<PropertyStruct>() {}));
-        return executeRemoteCallSingleValueReturn(function, PropertyStruct.class);
+    public RemoteFunctionCall<Property> getProperty(BigInteger tokenId) {
+        final Function function = new Function("getProperty", 
+                Arrays.asList(new Uint256(tokenId)), 
+                Arrays.asList(new TypeReference<Property>() {}));
+        return executeRemoteCallSingleValueReturn(function, Property.class);
     }
 
-    public RemoteFunctionCall<List<PropertyStruct>> getAllProperties() {
-        final Function function = new Function("getAllProperties",
-                Arrays.asList(),
-                Arrays.asList(new TypeReference<DynamicArray<PropertyStruct>>() {}));
-        return executeRemoteCallSingleValueReturn(function, (Class<List<PropertyStruct>>) (Class) List.class);
+    public RemoteFunctionCall<List> getAllProperties() {
+        final Function function = new Function("getAllProperties", 
+                Arrays.asList(), 
+                Arrays.asList(new TypeReference<DynamicArray<Property>>() {}));
+        return executeRemoteCallSingleValueReturn(function, List.class);
     }
 
-    public static class PropertyStruct extends StaticStruct {
+    public RemoteFunctionCall<BigInteger> propertyIds(BigInteger index) {
+        final Function function = new Function("propertyIds", 
+                Arrays.asList(new Uint256(index)), 
+                Arrays.asList(new TypeReference<Uint256>() {}));
+        return executeRemoteCallSingleValueReturn(function, BigInteger.class);
+    }
+
+    public static class Property extends StaticStruct {
         public BigInteger tokenId;
         public String owner;
         public BigInteger price;
         public Boolean isForSale;
 
-        public PropertyStruct(BigInteger tokenId, String owner, BigInteger price, Boolean isForSale) {
+        public Property(BigInteger tokenId, String owner, BigInteger price, Boolean isForSale) {
             super(new Uint256(tokenId), new Address(owner), new Uint256(price), new Bool(isForSale));
             this.tokenId = tokenId;
             this.owner = owner;
@@ -65,7 +68,7 @@ public class PropertyNFT extends Contract {
             this.isForSale = isForSale;
         }
 
-        public PropertyStruct(Uint256 tokenId, Address owner, Uint256 price, Bool isForSale) {
+        public Property(Uint256 tokenId, Address owner, Uint256 price, Bool isForSale) {
             super(tokenId, owner, price, isForSale);
             this.tokenId = tokenId.getValue();
             this.owner = owner.getValue();

@@ -1,79 +1,56 @@
 import React, { useState } from "react";
-import WalletConnect from "./components/WalletConnect";
-import AddProperty from "./pages/AddProperty";
-import PropertyList from "./pages/PropertyList";
+import Login from "./pages/Login";
+import AdminDashboard from "./pages/AdminDashboard";
+import ListerDashboard from "./pages/ListerDashboard";
+import BuyerDashboard from "./pages/BuyerDashboard";
+import { getUserRole } from "./services/web3Service";
 import "./App.css";
 
-// ─── App.jsx ────────────────────────────────────────────────
-// Root component that assembles the three main views.
-// The walletAddress and refreshTrigger states are lifted here
-// so all child components stay in sync with each other.
-// ─────────────────────────────────────────────────────────────
 function App() {
   const [walletAddress, setWalletAddress] = useState("");
-  // Increment this to trigger a re-fetch in PropertyList
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [activeTab, setActiveTab] = useState("list"); // "list" | "add"
+  const [userRole, setUserRole] = useState(null); // "admin", "lister", "buyer"
 
-  const handlePropertyAdded = () => {
-    setRefreshTrigger((prev) => prev + 1);
-    setActiveTab("list"); // Switch to list view after minting/listing
+  const handleConnect = async (address) => {
+    setWalletAddress(address);
+    if (address) {
+      const role = await getUserRole(address);
+      setUserRole(role);
+    } else {
+      setUserRole(null);
+    }
+  };
+
+  const handleDisconnect = () => {
+    setWalletAddress("");
+    setUserRole(null);
   };
 
   return (
     <div style={styles.wrapper}>
-      {/* ── Header ── */}
+      {/* ── Global Header ── */}
       <header style={styles.header}>
-        <h1 style={styles.title}>🏠 Decentralized Real Estate Platform</h1>
-        <p style={styles.subtitle}>
-          Phase 3 · NFT Tokenization on Local Blockchain
-        </p>
+        <div>
+          <h1 style={styles.title}>🏠 Decentralized Real Estate Platform</h1>
+          <p style={styles.subtitle}>Phase 4 · Advanced Role-Based Dashboards</p>
+        </div>
+        {walletAddress && (
+          <div style={styles.headerRight}>
+            <span style={styles.roleBadge}>Role: {userRole?.toUpperCase()}</span>
+            <button onClick={handleDisconnect} style={styles.disconnectBtn}>Disconnect</button>
+          </div>
+        )}
       </header>
 
       <main style={styles.main}>
-        {/* ── Wallet Connection ── */}
-        <WalletConnect onConnect={setWalletAddress} />
-
-        {/* ── Tab Navigation ── */}
-        {walletAddress && (
-          <div style={styles.tabs}>
-            <button
-              id="tab-list"
-              style={{
-                ...styles.tab,
-                borderBottom: activeTab === "list" ? "3px solid #3f51b5" : "3px solid transparent",
-                color: activeTab === "list" ? "#3f51b5" : "#666",
-              }}
-              onClick={() => setActiveTab("list")}
-            >
-              🏘️ All Properties
-            </button>
-            <button
-              id="tab-add"
-              style={{
-                ...styles.tab,
-                borderBottom: activeTab === "add" ? "3px solid #3f51b5" : "3px solid transparent",
-                color: activeTab === "add" ? "#3f51b5" : "#666",
-              }}
-              onClick={() => setActiveTab("add")}
-            >
-              ➕ Mint / List
-            </button>
-          </div>
-        )}
-
-        {/* ── Views ── */}
-        {activeTab === "list" && (
-          <PropertyList
-            walletAddress={walletAddress}
-            refreshTrigger={refreshTrigger}
-          />
-        )}
-        {activeTab === "add" && (
-          <AddProperty
-            walletAddress={walletAddress}
-            onPropertyAdded={handlePropertyAdded}
-          />
+        {/* ── Routing Logic ── */}
+        {!walletAddress ? (
+          <Login onConnect={handleConnect} />
+        ) : (
+          <>
+            {userRole === "admin" && <AdminDashboard />}
+            {userRole === "lister" && <ListerDashboard walletAddress={walletAddress} />}
+            {userRole === "buyer" && <BuyerDashboard walletAddress={walletAddress} />}
+          </>
         )}
       </main>
     </div>
@@ -89,26 +66,36 @@ const styles = {
   header: {
     backgroundColor: "#1a237e",
     color: "white",
-    padding: "20px 32px",
-  },
-  title: { margin: 0, fontSize: "24px" },
-  subtitle: { margin: "4px 0 0", fontSize: "14px", opacity: 0.8 },
-  main: { maxWidth: "960px", margin: "24px auto", padding: "0 16px" },
-  tabs: {
+    padding: "16px 32px",
     display: "flex",
-    gap: "4px",
-    marginBottom: "16px",
-    borderBottom: "1px solid #ddd",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
-  tab: {
-    padding: "10px 20px",
-    background: "none",
-    border: "none",
+  headerRight: {
+    display: "flex",
+    alignItems: "center",
+    gap: "16px",
+  },
+  roleBadge: {
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    padding: "6px 12px",
+    borderRadius: "16px",
+    fontSize: "12px",
+    fontWeight: "bold",
+    letterSpacing: "1px",
+  },
+  disconnectBtn: {
+    backgroundColor: "transparent",
+    color: "white",
+    border: "1px solid rgba(255,255,255,0.5)",
+    padding: "6px 16px",
+    borderRadius: "6px",
     cursor: "pointer",
-    fontSize: "15px",
-    fontWeight: "600",
-    transition: "color 0.2s",
+    fontWeight: "bold",
   },
+  title: { margin: 0, fontSize: "20px" },
+  subtitle: { margin: "4px 0 0", fontSize: "13px", opacity: 0.8 },
+  main: { maxWidth: "1000px", margin: "24px auto", padding: "0 16px" },
 };
 
 export default App;

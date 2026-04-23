@@ -1,7 +1,7 @@
 package com.realestate.blockchain.service;
 
 import com.realestate.blockchain.PropertyNFT;
-import com.realestate.model.Property;
+import com.realestate.model.PropertyDTO;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.web3j.protocol.Web3j;
@@ -17,11 +17,8 @@ import java.util.stream.Collectors;
 /**
  * BlockchainService
  * -----------------
- * Handles all READ-ONLY interactions with the smart contract using the 
- * generated Web3j wrapper (PropertyNFT.java).
- *
- * This implementation follows the clean architecture pattern by separating 
- * the blockchain logic from the REST API.
+ * Handles READ-ONLY interactions with the smart contract using the Web3j wrapper.
+ * No private keys are used; we use a dummy address for read operations.
  */
 @Service
 public class BlockchainService {
@@ -36,49 +33,49 @@ public class BlockchainService {
     }
 
     /**
-     * Loads the smart contract using the Web3j wrapper.
-     * We use ReadonlyTransactionManager because we are only reading state.
+     * Loads the smart contract in read-only mode.
      */
     private PropertyNFT getContract() {
-        // Any valid address can be used for readonly calls, or null for most providers
+        // Read-only calls don't need a real private key.
         String dummyAddress = "0x0000000000000000000000000000000000000000";
         ReadonlyTransactionManager txManager = new ReadonlyTransactionManager(web3j, dummyAddress);
         return PropertyNFT.load(contractAddress, web3j, txManager, new DefaultGasProvider());
     }
 
-    public String getClientVersion() throws Exception {
-        return web3j.web3ClientVersion().send().getWeb3ClientVersion();
-    }
-
     /**
-     * Fetches a property by ID using the generated wrapper.
+     * Fetches all properties and maps them to DTOs.
      */
-    public Property getPropertyById(BigInteger tokenId) throws Exception {
-        PropertyNFT.PropertyStruct struct = getContract().getProperty(tokenId).send();
-        return mapToProperty(struct);
-    }
-
-    /**
-     * Fetches all properties using the generated wrapper.
-     */
-    public List<Property> getAllProperties() throws Exception {
-        List<PropertyNFT.PropertyStruct> structs = getContract().getAllProperties().send();
-        return structs.stream()
-                .map(this::mapToProperty)
+    public List<PropertyDTO> getAllProperties() throws Exception {
+        List<PropertyNFT.Property> properties = getContract().getAllProperties().send();
+        return properties.stream()
+                .map(this::mapToDTO)
                 .collect(Collectors.toList());
     }
 
-    // ─── Data Mapping ──────────────────────────────────────────
+    /**
+     * Fetches a single property by ID.
+     */
+    public PropertyDTO getPropertyById(BigInteger tokenId) throws Exception {
+        PropertyNFT.Property property = getContract().getProperty(tokenId).send();
+        return mapToDTO(property);
+    }
 
-    private Property mapToProperty(PropertyNFT.PropertyStruct struct) {
-        // Convert Wei (from contract) to ETH (for display)
-        String priceEth = Convert.fromWei(new BigDecimal(struct.price), Convert.Unit.ETHER).toPlainString();
+    /**
+     * Helper to map blockchain struct to API DTO.
+     */
+    private PropertyDTO mapToDTO(PropertyNFT.Property property) {
+        // Convert Wei to ETH for readability
+        String priceEth = Convert.fromWei(new BigDecimal(property.price), Convert.Unit.ETHER).toPlainString();
         
-        return new Property(
-                struct.tokenId.toString(),
-                struct.owner,
+        return new PropertyDTO(
+                property.tokenId.toString(),
+                property.owner,
                 priceEth,
-                struct.isForSale
+                property.isForSale
         );
+    }
+
+    public String getClientVersion() throws Exception {
+        return web3j.web3ClientVersion().send().getWeb3ClientVersion();
     }
 }

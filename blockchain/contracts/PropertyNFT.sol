@@ -5,10 +5,13 @@ pragma solidity ^0.8.19;
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
 
-contract PropertyNFT is ERC721URIStorage, Ownable {
+contract PropertyNFT is ERC721URIStorage, Ownable, AccessControl {
     using Counters for Counters.Counter;
     Counters.Counter private _tokenIdCounter;
+
+    bytes32 public constant LISTER_ROLE = keccak256("LISTER_ROLE");
 
     struct Property {
         uint256 tokenId;
@@ -18,18 +21,39 @@ contract PropertyNFT is ERC721URIStorage, Ownable {
     }
 
     mapping(uint256 => Property) public properties;
+    uint256[] public propertyIds; // Track all minted property IDs
 
     event PropertyMinted(uint256 indexed tokenId, address indexed owner, string tokenURI);
     event PropertyListed(uint256 indexed tokenId, uint256 price);
     event PropertySold(uint256 indexed tokenId, address indexed oldOwner, address indexed newOwner, uint256 price);
 
-    // OZ v4 Ownable: no constructor argument needed
-    constructor() ERC721("RealEstateNFT", "RENFT") {}
+    constructor() ERC721("RealEstateNFT", "RENFT") {
+        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _setupRole(LISTER_ROLE, msg.sender); // Admin can also list properties
+    }
+
+    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC721URIStorage, AccessControl) returns (bool) {
+        return super.supportsInterface(interfaceId);
+    }
+
+    /**
+     * @dev Grants the lister role to an address. Only callable by admin.
+     */
+    function grantLister(address account) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        grantRole(LISTER_ROLE, account);
+    }
+
+    /**
+     * @dev Revokes the lister role from an address. Only callable by admin.
+     */
+    function revokeLister(address account) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        revokeRole(LISTER_ROLE, account);
+    }
 
     /**
      * @dev Mints a new Property NFT.
      */
-    function mintProperty(address to, string memory uri) public returns (uint256) {
+    function mintProperty(address to, string memory uri) public onlyRole(LISTER_ROLE) returns (uint256) {
         uint256 tokenId = _tokenIdCounter.current();
         _tokenIdCounter.increment();
 
@@ -43,6 +67,8 @@ contract PropertyNFT is ERC721URIStorage, Ownable {
             isForSale: false
         });
 
+        propertyIds.push(tokenId); // Add to tracking array
+
         emit PropertyMinted(tokenId, to, uri);
         return tokenId;
     }
@@ -51,6 +77,7 @@ contract PropertyNFT is ERC721URIStorage, Ownable {
      * @dev Lists a property for sale.
      */
     function listProperty(uint256 tokenId, uint256 price) public {
+        require(_exists(tokenId), "Property does not exist");
         require(ownerOf(tokenId) == msg.sender, "Only the owner can list this property");
         require(price > 0, "Price must be greater than zero");
 
@@ -64,6 +91,7 @@ contract PropertyNFT is ERC721URIStorage, Ownable {
      * @dev Buys a listed property.
      */
     function buyProperty(uint256 tokenId) public payable {
+        require(_exists(tokenId), "Property does not exist");
         Property storage property = properties[tokenId];
 
         require(property.isForSale, "Property is not for sale");
@@ -98,13 +126,12 @@ contract PropertyNFT is ERC721URIStorage, Ownable {
     }
 
     /**
-     * @dev Gets all properties.
+     * @dev Gets all properties using the tracking array.
      */
     function getAllProperties() public view returns (Property[] memory) {
-        uint256 total = _tokenIdCounter.current();
-        Property[] memory allProperties = new Property[](total);
-        for (uint256 i = 0; i < total; i++) {
-            allProperties[i] = properties[i];
+        Property[] memory allProperties = new Property[](propertyIds.length);
+        for (uint256 i = 0; i < propertyIds.length; i++) {
+            allProperties[i] = properties[propertyIds[i]];
         }
         return allProperties;
     }

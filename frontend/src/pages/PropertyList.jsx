@@ -1,20 +1,28 @@
 import React, { useState, useEffect } from "react";
-import { getAllProperties, buyProperty } from "../services/web3Service";
+import { getAllProperties, buyProperty, getPropertyHistory } from "../services/web3Service";
 
-// ─── PropertyList.jsx ─────────────────────────────────────────
-// Fetches and displays all properties from the blockchain.
-// If a property isForSale, shows a "Buy" button.
-// The buy button calls buyProperty() which triggers a MetaMask tx.
-// ─────────────────────────────────────────────────────────────
+/**
+ * PropertyList Page (Phase 6 Enhanced)
+ * ------------------------------------
+ * Features added:
+ * - Status Badges (Owned by You, For Sale, Sold)
+ * - Property Transaction History (via blockchain events)
+ * - KYC Simulation (Checkbox verification)
+ * - ETH to INR conversion display
+ * - Loading feedback and disabled button states
+ */
 const PropertyList = ({ walletAddress, refreshTrigger }) => {
   const [properties, setProperties] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  // Track individual buy loading states per tokenId
   const [buyingId, setBuyingId] = useState(null);
   const [txMsg, setTxMsg] = useState({ id: null, text: "", isError: false });
+  const [propertyHistory, setPropertyHistory] = useState({}); // { tokenId: historyArray }
+  const [showHistory, setShowHistory] = useState({}); // { tokenId: boolean }
+  const [isVerified, setIsVerified] = useState(false); // KYC Simulation
 
-  // Fetch all properties on mount and whenever refreshTrigger changes
+  const ETH_TO_INR = 300000;
+
   useEffect(() => {
     if (walletAddress) {
       fetchProperties();
@@ -25,7 +33,6 @@ const PropertyList = ({ walletAddress, refreshTrigger }) => {
     setLoading(true);
     setError("");
     try {
-      // Calls getAllProperties() — a read-only call, no MetaMask popup
       const data = await getAllProperties();
       setProperties(data);
     } catch (err) {
@@ -36,23 +43,26 @@ const PropertyList = ({ walletAddress, refreshTrigger }) => {
   };
 
   const handleBuy = async (property) => {
+    if (!isVerified) {
+      setTxMsg({ id: property.tokenId, text: "Please complete KYC verification first.", isError: true });
+      return;
+    }
+
     setBuyingId(property.tokenId);
     setTxMsg({ id: null, text: "", isError: false });
     try {
-      // Sends ETH = property.price with the transaction
-      // MetaMask popup appears asking user to confirm
+      setTxMsg({ id: property.tokenId, text: "Transaction in progress... please confirm in MetaMask.", isError: false });
       const receipt = await buyProperty(property.tokenId, property.price);
       setTxMsg({
         id: property.tokenId,
-        text: `Purchase successful! Tx: ${receipt.hash.slice(0, 18)}...`,
+        text: `Success! Purchased for ${property.priceEth} ETH.`,
         isError: false,
       });
-      // Refresh the list to show updated ownership
-      fetchProperties();
+      fetchProperties(); // Refresh list
     } catch (err) {
       setTxMsg({
         id: property.tokenId,
-        text: err.code === 4001 ? "Transaction rejected by user." : err.message,
+        text: err.message,
         isError: true,
       });
     } finally {
@@ -60,13 +70,36 @@ const PropertyList = ({ walletAddress, refreshTrigger }) => {
     }
   };
 
+  const toggleHistory = async (tokenId) => {
+    if (showHistory[tokenId]) {
+      setShowHistory({ ...showHistory, [tokenId]: false });
+      return;
+    }
+
+    // Fetch history if not already loaded
+    if (!propertyHistory[tokenId]) {
+      try {
+        const history = await getPropertyHistory(tokenId);
+        setPropertyHistory({ ...propertyHistory, [tokenId]: history });
+      } catch (err) {
+        console.error("History fetch error:", err);
+      }
+    }
+    setShowHistory({ ...showHistory, [tokenId]: true });
+  };
+
   const shortenAddress = (addr) =>
     addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : "N/A";
+
+  const formatPriceINR = (eth) => {
+    const inr = parseFloat(eth) * ETH_TO_INR;
+    return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(inr);
+  };
 
   if (!walletAddress) {
     return (
       <div style={styles.card}>
-        <p style={{ color: "#888" }}>⚠️ Please connect your wallet to view properties.</p>
+        <p style={{ color: "#888" }}>⚠️ Please connect your wallet to view property marketplace.</p>
       </div>
     );
   }
@@ -74,86 +107,128 @@ const PropertyList = ({ walletAddress, refreshTrigger }) => {
   return (
     <div style={styles.card}>
       <div style={styles.headerRow}>
-        <h2 style={styles.heading}>🏘️ All Properties</h2>
+        <h2 style={styles.heading}>🏘️ Property Marketplace</h2>
         <button id="refresh-btn" onClick={fetchProperties} style={styles.refreshBtn}>
-          🔄 Refresh
+          🔄 Refresh Data
         </button>
       </div>
 
-      {loading && <p style={{ color: "#888" }}>Loading from blockchain...</p>}
-      {error && <p style={{ color: "#f44336" }}>❌ {error}</p>}
+      {/* KYC Simulation Banner */}
+      <div className="kyc-box">
+        <input 
+          type="checkbox" 
+          id="kyc-check" 
+          checked={isVerified} 
+          onChange={(e) => setIsVerified(e.target.checked)} 
+        />
+        <label htmlFor="kyc-check">
+          <strong>KYC Simulation:</strong> I confirm my identity and verify myself as a legitimate buyer.
+        </label>
+      </div>
+
+      {loading && <p style={{ color: "#888", margin: "20px" }}>⏳ Fetching data from blockchain...</p>}
+      {error && <p style={{ color: "#f44336", margin: "20px" }}>❌ {error}</p>}
 
       {!loading && properties.length === 0 && (
-        <p style={{ color: "#888" }}>
-          No properties found. Mint the first one!
+        <p style={{ color: "#888", margin: "40px" }}>
+          No properties found in the registry. Use the Mint page to add one!
         </p>
       )}
 
       <div style={styles.grid}>
         {properties.map((property) => {
-          const isOwner =
-            walletAddress &&
-            property.owner.toLowerCase() === walletAddress.toLowerCase();
+          const isOwner = property.owner.toLowerCase() === walletAddress.toLowerCase();
           const isBuying = buyingId === property.tokenId;
+          const statusClass = isOwner ? "status-owned" : (property.isForSale ? "status-available" : "status-sold");
+          const statusText = isOwner ? "👤 Owned by You" : (property.isForSale ? "🟢 Available" : "🔒 Private");
 
           return (
             <div key={property.tokenId} style={styles.propertyCard}>
-              {/* Status Badge */}
-              <span
-                style={{
-                  ...styles.badge,
-                  backgroundColor: property.isForSale ? "#e8f5e9" : "#fff3e0",
-                  color: property.isForSale ? "#388e3c" : "#f57c00",
-                }}
-              >
-                {property.isForSale ? "🟢 For Sale" : "🔒 Not Listed"}
+              {isBuying && <div className="loading-overlay">⏳ Buying...</div>}
+              
+              <span className={`status-badge ${statusClass}`}>
+                {statusText}
               </span>
 
               <div style={styles.infoRow}>
-                <span style={styles.fieldLabel}>Token ID</span>
-                <span style={styles.fieldValue}>#{property.tokenId}</span>
+                <span style={styles.fieldLabel}>Asset ID</span>
+                <span style={styles.fieldValue}>NFT #{property.tokenId}</span>
               </div>
               <div style={styles.infoRow}>
                 <span style={styles.fieldLabel}>Owner</span>
-                <span style={styles.fieldValue}>
-                  {isOwner
-                    ? `You (${shortenAddress(property.owner)})`
-                    : shortenAddress(property.owner)}
+                <span style={styles.fieldValue} title={property.owner}>
+                  {isOwner ? "You" : shortenAddress(property.owner)}
                 </span>
               </div>
               <div style={styles.infoRow}>
-                <span style={styles.fieldLabel}>Price</span>
-                <span style={styles.fieldValue}>
-                  {property.isForSale ? `${property.priceEth} ETH` : "—"}
-                </span>
+                <span style={styles.fieldLabel}>Market Price</span>
+                <div style={{ textAlign: "right" }}>
+                  <div style={styles.fieldValue}>
+                    {property.isForSale ? `${property.priceEth} ETH` : "—"}
+                  </div>
+                  {property.isForSale && (
+                    <div className="inr-price">≈ {formatPriceINR(property.priceEth)}</div>
+                  )}
+                </div>
               </div>
 
-              {/* Buy button — only visible for non-owners on listed properties */}
+              {/* Buy Button */}
               {property.isForSale && !isOwner && (
                 <button
                   id={`buy-btn-${property.tokenId}`}
                   onClick={() => handleBuy(property)}
-                  disabled={isBuying}
-                  style={styles.buyBtn}
+                  disabled={isBuying || !isVerified}
+                  style={{
+                    ...styles.buyBtn,
+                    opacity: (!isVerified || isBuying) ? 0.6 : 1,
+                    cursor: (!isVerified || isBuying) ? "not-allowed" : "pointer"
+                  }}
                 >
-                  {isBuying
-                    ? "Buying... (confirm MetaMask)"
-                    : `💰 Buy for ${property.priceEth} ETH`}
+                  {isBuying ? "Confirming..." : "Purchase Property"}
                 </button>
               )}
 
-              {/* Per-property transaction feedback */}
+              {/* Transaction Messages */}
               {txMsg.id === property.tokenId && txMsg.text && (
-                <p
-                  style={{
-                    fontSize: "12px",
-                    marginTop: "8px",
-                    color: txMsg.isError ? "#f44336" : "#4caf50",
-                  }}
-                >
-                  {txMsg.isError ? "❌ " : "✔ "}
+                <div style={{
+                  fontSize: "12px",
+                  marginTop: "12px",
+                  padding: "8px",
+                  borderRadius: "4px",
+                  backgroundColor: txMsg.isError ? "#ffebee" : "#e8f5e9",
+                  color: txMsg.isError ? "#c62828" : "#2e7d32",
+                  border: `1px solid ${txMsg.isError ? "#ef9a9a" : "#a5d6a7"}`
+                }}>
                   {txMsg.text}
-                </p>
+                </div>
+              )}
+
+              {/* History Toggle */}
+              <button 
+                onClick={() => toggleHistory(property.tokenId)}
+                style={styles.historyBtn}
+              >
+                {showHistory[property.tokenId] ? "🔼 Hide History" : "🔽 View History"}
+              </button>
+
+              {showHistory[property.tokenId] && (
+                <div className="history-container">
+                  {propertyHistory[property.tokenId] ? (
+                    propertyHistory[property.tokenId].length > 0 ? (
+                      propertyHistory[property.tokenId].map((h, i) => (
+                        <div key={i} className="history-item">
+                          <span className="history-type">{h.type}</span>
+                          <span style={{ fontSize: "10px" }}>
+                            {h.type === "MINTED" ? `to ${shortenAddress(h.to)}` : `from ${shortenAddress(h.from)} to ${shortenAddress(h.to)}`}
+                          </span>
+                          <div className="history-date">
+                            {new Date(h.timestamp * 1000).toLocaleDateString()}
+                          </div>
+                        </div>
+                      ))
+                    ) : <p style={{ fontSize: "11px", color: "#888" }}>No records found.</p>
+                  ) : <p style={{ fontSize: "11px", color: "#888" }}>Loading logs...</p>}
+                </div>
               )}
             </div>
           );
@@ -166,67 +241,80 @@ const PropertyList = ({ walletAddress, refreshTrigger }) => {
 const styles = {
   card: {
     border: "1px solid #ddd",
-    borderRadius: "8px",
-    padding: "20px",
-    marginBottom: "16px",
+    borderRadius: "12px",
+    padding: "24px",
+    marginBottom: "20px",
     backgroundColor: "#fff",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
   },
   headerRow: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: "16px",
+    marginBottom: "20px",
   },
-  heading: { fontSize: "18px", margin: 0 },
+  heading: { fontSize: "22px", margin: 0, fontWeight: "600" },
   refreshBtn: {
-    padding: "6px 14px",
+    padding: "8px 16px",
     border: "1px solid #3f51b5",
-    borderRadius: "6px",
+    borderRadius: "8px",
     color: "#3f51b5",
-    backgroundColor: "transparent",
+    backgroundColor: "#fff",
     cursor: "pointer",
-    fontSize: "13px",
+    fontSize: "14px",
+    fontWeight: "500",
+    transition: "all 0.2s",
   },
   grid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-    gap: "16px",
+    gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+    gap: "20px",
   },
   propertyCard: {
-    border: "1px solid #e0e0e0",
-    borderRadius: "8px",
-    padding: "16px",
-    backgroundColor: "#fafafa",
-    position: "relative",
-  },
-  badge: {
-    display: "inline-block",
-    padding: "3px 10px",
+    border: "1px solid #eee",
     borderRadius: "12px",
-    fontSize: "12px",
-    fontWeight: "bold",
-    marginBottom: "10px",
+    padding: "20px",
+    backgroundColor: "#fff",
+    position: "relative",
+    transition: "transform 0.2s, box-shadow 0.2s",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.02)",
+    ":hover": {
+      boxShadow: "0 8px 16px rgba(0,0,0,0.08)",
+      transform: "translateY(-4px)"
+    }
   },
   infoRow: {
     display: "flex",
     justifyContent: "space-between",
-    marginBottom: "6px",
-    fontSize: "13px",
+    alignItems: "flex-start",
+    marginBottom: "12px",
+    fontSize: "14px",
   },
-  fieldLabel: { color: "#888" },
-  fieldValue: { fontWeight: "600", color: "#333" },
+  fieldLabel: { color: "#777", fontWeight: "400" },
+  fieldValue: { fontWeight: "600", color: "#111" },
   buyBtn: {
-    marginTop: "12px",
+    marginTop: "8px",
     width: "100%",
-    padding: "10px",
-    backgroundColor: "#4caf50",
+    padding: "12px",
+    backgroundColor: "#2e7d32",
     color: "white",
     border: "none",
-    borderRadius: "6px",
-    cursor: "pointer",
-    fontWeight: "bold",
-    fontSize: "13px",
+    borderRadius: "8px",
+    fontWeight: "700",
+    fontSize: "14px",
+    transition: "background-color 0.2s",
   },
+  historyBtn: {
+    marginTop: "16px",
+    width: "100%",
+    background: "none",
+    border: "1px solid #ddd",
+    borderRadius: "6px",
+    padding: "6px",
+    fontSize: "12px",
+    color: "#666",
+    cursor: "pointer",
+  }
 };
 
 export default PropertyList;
